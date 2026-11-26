@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import CourseTrackerContainer from "@/components/courses/course-tracker-container";
 
 export const metadata = {
-  title: "Course Tracker | Process Tracker",
+  title: "Course Tracker",
   description: "Track your video courses, sections, lectures, and automate learning hours.",
 };
 

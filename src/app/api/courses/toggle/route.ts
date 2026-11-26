@@ -11,22 +11,47 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    const { videoId, isWatched } = await req.json();
+    const body = await req.json();
+    const videoId = typeof body?.videoId === "string" ? body.videoId.trim() : "";
+    const isWatched = Boolean(body?.isWatched);
 
     if (!videoId) {
       return NextResponse.json({ message: "Video ID is required" }, { status: 400 });
     }
 
+    const existingVideo = await prisma.video.findUnique({
+      where: { id: videoId },
+      select: {
+        id: true,
+        section: {
+          select: {
+            course: {
+              select: { userId: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!existingVideo) {
+      return NextResponse.json({ message: "Video not found" }, { status: 404 });
+    }
+
+    if (existingVideo.section.course.userId !== session.user.id) {
+      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+    }
+
     const updated = await prisma.video.update({
       where: { id: videoId },
       data: {
-        isWatched: !!isWatched,
+        isWatched,
         watchedAtDate: isWatched ? new Date() : null,
       },
     });
 
     revalidatePath("/");
     revalidatePath("/courses");
+    revalidatePath("/analytics");
 
     return NextResponse.json(updated);
   } catch (error) {

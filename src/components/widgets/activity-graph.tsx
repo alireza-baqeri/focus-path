@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import prisma from "@/lib/prisma";
 import GitHubContributionBoard from "./github-contribution-board";
-import { formatLocalDate } from "@/lib/date-utils";
+import { formatLocalDate, formatUTCDate } from "@/lib/date-utils";
 
 export default async function ActivityGraph() {
   const session = await getServerSession(authOptions);
@@ -68,9 +68,9 @@ export default async function ActivityGraph() {
     });
   });
 
-  // 2. Aggregate logged activities
+  // 2. Aggregate logged activities (DayRecord.date is stored at UTC midnight)
   dayRecords.forEach((record) => {
-    const dateStr = formatLocalDate(record.date);
+    const dateStr = formatUTCDate(record.date);
     const existing = map.get(dateStr) || {
       videos: 0,
       learningHours: 0,

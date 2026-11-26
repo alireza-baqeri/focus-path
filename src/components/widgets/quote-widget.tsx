@@ -31,7 +31,24 @@ export default function QuoteWidget({ category }: QuoteWidgetProps) {
   };
 
   useEffect(() => {
-    fetchQuote(category);
+    let cancelled = false;
+    fetch(`/api/quote?genre=${encodeURIComponent(category || "motivational")}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("Quote fetch failed"))))
+      .then((data) => {
+        if (!cancelled) setQuote(data);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setQuote({
+            quoteText: "It always seems impossible until it's done.",
+            quoteAuthor: "Nelson Mandela",
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [category]);
 
   return (
@@ -56,7 +73,7 @@ export default function QuoteWidget({ category }: QuoteWidgetProps) {
         {quote ? (
           <div className="flex flex-col h-full justify-between space-y-2">
             <p className="text-sm italic text-gray-800 dark:text-gray-200 line-clamp-3">
-              "{quote.quoteText}"
+              &ldquo;{quote.quoteText}&rdquo;
             </p>
             <p className="text-xs text-right font-medium text-gray-500">
               — {quote.quoteAuthor}

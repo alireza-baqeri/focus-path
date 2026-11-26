@@ -10,6 +10,7 @@ export async function GET(req: Request) {
     const quote = await fetchInspirationalQuote(genre);
     return NextResponse.json(quote);
   } catch (error) {
+    console.error("Quote route error:", error);
     return NextResponse.json(
       { quoteText: "The secret of getting ahead is getting started.", quoteAuthor: "Mark Twain" },
       { status: 200 }

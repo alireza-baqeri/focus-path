@@ -1,26 +1,31 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Sun, Moon, Clock } from "lucide-react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { Sun, Moon } from "lucide-react";
+
+const emptySubscribe = () => () => {};
+
+function getDayProgressPercent(): number {
+  const now = new Date();
+  const secondsSinceMidnight =
+    now.getHours() * 3600 +
+    now.getMinutes() * 60 +
+    now.getSeconds();
+  return (secondsSinceMidnight / 86400) * 100;
+}
 
 export default function DayProgressWidget() {
-  const [progress, setProgress] = useState(0);
-  const [mounted, setMounted] = useState(false);
+  const [progress, setProgress] = useState(() => getDayProgressPercent());
+  const mounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
 
   useEffect(() => {
-    setMounted(true);
-    const calculateProgress = () => {
-      const now = new Date();
-      const secondsSinceMidnight = 
-        now.getHours() * 3600 + 
-        now.getMinutes() * 60 + 
-        now.getSeconds();
-      const percent = (secondsSinceMidnight / 86400) * 100;
-      setProgress(percent);
-    };
-
-    calculateProgress();
-    const interval = setInterval(calculateProgress, 1000);
+    const interval = setInterval(() => {
+      setProgress(getDayProgressPercent());
+    }, 1000);
     return () => clearInterval(interval);
   }, []);
 

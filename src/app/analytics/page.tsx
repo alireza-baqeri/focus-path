@@ -7,9 +7,11 @@ import { ArrowLeft, BarChart2, TrendingUp, Clock, CheckCircle2, Flame, CalendarD
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import ActivityGraph from "@/components/widgets/activity-graph";
 import { calculateUserStreak } from "@/lib/streak-utils";
+import AnalyticsCharts from "@/components/analytics/weekly-chart";
+import { formatLocalDate, formatUTCDate } from "@/lib/date-utils";
 
 export const metadata = {
-  title: "Deep Analytics | Process Tracker",
+  title: "Deep Analytics",
   description: "Comprehensive analytics and performance metrics for your habits and courses.",
 };
 
@@ -45,7 +47,6 @@ export default async function AnalyticsPage() {
       ),
     0
   );
-  const totalDurationSeconds = courses.reduce((acc, c) => acc + c.totalDuration, 0);
 
   const dayRecords = await prisma.dayRecord.findMany({
     where: { userId },
@@ -57,7 +58,9 @@ export default async function AnalyticsPage() {
   // Calculate total coding and study hours
   let totalCodingMinutes = 0;
   let totalStudyMinutes = 0;
+  let watchedVideoMinutes = 0;
   const activeDaysSet = new Set<string>();
+  const videoStudyMinutesByDate = new Map<string, number>();
 
   dayRecords.forEach((dr) => {
     let hasActivity = false;
@@ -71,15 +74,29 @@ export default async function AnalyticsPage() {
       }
     });
     if (hasActivity) {
-      activeDaysSet.add(dr.date.toISOString().split('T')[0]);
+      const dateStr = formatUTCDate(dr.date);
+      if (dateStr) activeDaysSet.add(dateStr);
     }
   });
 
-  courses.forEach(c => c.sections.forEach(s => s.videos.forEach(v => {
-    if (v.isWatched && v.watchedAtDate) {
-      activeDaysSet.add(v.watchedAtDate.toISOString().split('T')[0]);
-    }
-  })));
+  courses.forEach((c) =>
+    c.sections.forEach((s) =>
+      s.videos.forEach((v) => {
+        if (v.isWatched) {
+          const mins = v.duration / 60;
+          watchedVideoMinutes += mins;
+          totalStudyMinutes += mins;
+          if (v.watchedAtDate) {
+            const dateStr = formatLocalDate(v.watchedAtDate);
+            if (dateStr) {
+              activeDaysSet.add(dateStr);
+              videoStudyMinutesByDate.set(dateStr, (videoStudyMinutesByDate.get(dateStr) || 0) + mins);
+            }
+          }
+        }
+      })
+    )
+  );
 
   const totalActiveDays = activeDaysSet.size;
   const totalHoursLogged = (totalCodingMinutes + totalStudyMinutes) / 60;
@@ -90,6 +107,61 @@ export default async function AnalyticsPage() {
   const estimatedDaysToFinish = avgVideosPerDay > 0 ? Math.ceil(remainingVideos / avgVideosPerDay) : 0;
 
   const currentStreak = await calculateUserStreak(userId);
+
+  // Compute last 7 days data for bar chart using consistent local calendar dates
+  const last7Days: { day: string; coding: number; study: number; total: number }[] = [];
+  const today = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i, 12, 0, 0);
+    const dateStr = formatLocalDate(d);
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dayName = dayNames[d.getDay()];
+    
+    let dayCoding = 0;
+    let dayStudy = (videoStudyMinutesByDate.get(dateStr) || 0) / 60;
+    dayRecords.forEach((dr) => {
+      const drDate = formatUTCDate(dr.date);
+      if (drDate === dateStr) {
+        dr.activityLogs.forEach((log) => {
+          const name = log.category.name.toLowerCase();
+          const hours = log.durationMinutes / 60;
+          if (name.includes("cod") || name.includes("برنامه") || name.includes("dev") || name.includes("توسعه")) {
+            dayCoding += hours;
+          } else {
+            dayStudy += hours;
+          }
+        });
+      }
+    });
+    
+    last7Days.push({ day: dayName, coding: dayCoding, study: dayStudy, total: dayCoding + dayStudy });
+  }
+  
+  // Compute category breakdown for pie chart
+  const categoryMinutes: Record<string, number> = {};
+  const categoryColors: Record<string, string> = {};
+  const defaultColors = ["#3b82f6", "#a855f7", "#10b981", "#f59e0b", "#ef4444", "#06b6d4", "#ec4899", "#8b5cf6"];
+  
+  dayRecords.forEach((dr) => {
+    dr.activityLogs.forEach((log) => {
+      const catName = log.category.name;
+      categoryMinutes[catName] = (categoryMinutes[catName] || 0) + log.durationMinutes;
+      if (!categoryColors[catName]) {
+        categoryColors[catName] = log.category.colorCode || defaultColors[Object.keys(categoryColors).length % defaultColors.length];
+      }
+    });
+  });
+
+  if (watchedVideoMinutes > 0) {
+    categoryMinutes["Course Videos"] = (categoryMinutes["Course Videos"] || 0) + watchedVideoMinutes;
+    if (!categoryColors["Course Videos"]) {
+      categoryColors["Course Videos"] = "#10b981";
+    }
+  }
+  
+  const categoryData = Object.entries(categoryMinutes)
+    .map(([name, minutes]) => ({ name, value: minutes / 60, color: categoryColors[name] }))
+    .sort((a, b) => b.value - a.value);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-black text-gray-900 dark:text-gray-100 p-4 sm:p-6 md:p-8 max-w-7xl mx-auto space-y-6">
@@ -221,6 +293,9 @@ export default async function AnalyticsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Charts Section */}
+      <AnalyticsCharts dailyData={last7Days} categoryData={categoryData} />
 
       {/* Contribution Board (Full Stacked View) */}
       <div className="space-y-4 pt-4">

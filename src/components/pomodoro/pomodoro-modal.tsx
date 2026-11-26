@@ -6,6 +6,8 @@ import { Dialog, DialogContent, DialogTrigger, DialogTitle } from "@/components/
 import PomodoroTimer from "./pomodoro-timer";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { formatLocalDate } from "@/lib/date-utils";
+import { toast } from "sonner";
 
 export function PomodoroModal() {
   const [open, setOpen] = useState(false);
@@ -19,24 +21,25 @@ export function PomodoroModal() {
     const durationMinutes = Math.max(1, Math.round(durationSeconds / 60));
     
     try {
-      // We will create a simple endpoint to log just a single activity
-      // rather than posting the whole timetable day record.
       const res = await fetch("/api/timetable/activity", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           durationMinutes,
           categoryName: "Focus", // Default category for Pomodoro
-          date: new Date().toISOString()
+          date: formatLocalDate(new Date()),
         })
       });
       
       if (res.ok) {
-        // We could show a toast here
+        toast.success(`Logged ${durationMinutes}m focus session!`);
         router.refresh(); // Refresh dashboard
+      } else {
+        toast.error("Could not log focus session.");
       }
     } catch (error) {
       console.error("Failed to log pomodoro activity:", error);
+      toast.error("Network error logging focus session.");
     }
   };
 

@@ -1,7 +1,18 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import prisma from "@/lib/prisma";
+
+interface CourseVideoInput {
+  title: string;
+  duration?: number;
+}
+
+interface CourseSectionInput {
+  title: string;
+  videos?: CourseVideoInput[];
+}
 
 // GET: Fetch all courses with sections and videos
 export async function GET() {
@@ -45,18 +56,31 @@ export async function POST(req: Request) {
 
     const userId = session.user.id;
     const body = await req.json();
-    const { title, rootPath, sections } = body;
+    const title = typeof body?.title === "string" ? body.title.trim() : "";
+    const rootPath = typeof body?.rootPath === "string" ? body.rootPath.trim() : "";
+    const rawSections = body?.sections;
 
-    if (!title || !Array.isArray(sections)) {
+    if (!title || !Array.isArray(rawSections)) {
       return NextResponse.json({ message: "Title and sections array are required" }, { status: 400 });
     }
 
-    // Calculate total duration
+    const sections: CourseSectionInput[] = rawSections.filter(
+      (sec: unknown): sec is CourseSectionInput =>
+        typeof sec === "object" &&
+        sec !== null &&
+        typeof (sec as CourseSectionInput).title === "string" &&
+        (sec as CourseSectionInput).title.trim().length > 0
+    );
+
+    // Calculate total duration safely
     let totalDuration = 0;
-    sections.forEach((sec: any) => {
+    sections.forEach((sec) => {
       if (Array.isArray(sec.videos)) {
-        sec.videos.forEach((v: any) => {
-          totalDuration += v.duration || 0;
+        sec.videos.forEach((v) => {
+          const dur = typeof v?.duration === "number" && Number.isFinite(v.duration) && v.duration > 0
+            ? Math.round(v.duration)
+            : 0;
+          totalDuration += dur;
         });
       }
     });
@@ -94,15 +118,16 @@ export async function POST(req: Request) {
     // Create sections & videos
     for (let sIdx = 0; sIdx < sections.length; sIdx++) {
       const secData = sections[sIdx];
+      const secTitle = secData.title.trim();
       let section = await prisma.section.findFirst({
-        where: { courseId, title: secData.title },
+        where: { courseId, title: secTitle },
       });
 
       if (!section) {
         section = await prisma.section.create({
           data: {
             courseId: courseId!,
-            title: secData.title,
+            title: secTitle,
             orderIndex: sIdx,
           },
         });
@@ -110,16 +135,23 @@ export async function POST(req: Request) {
 
       if (Array.isArray(secData.videos)) {
         for (const vid of secData.videos) {
+          const vidTitle = typeof vid?.title === "string" ? vid.title.trim() : "";
+          if (!vidTitle) continue;
+          const vidDuration =
+            typeof vid?.duration === "number" && Number.isFinite(vid.duration) && vid.duration > 0
+              ? Math.round(vid.duration)
+              : 0;
+
           const existingVid = await prisma.video.findFirst({
-            where: { sectionId: section.id, title: vid.title },
+            where: { sectionId: section.id, title: vidTitle },
           });
 
           if (!existingVid) {
             await prisma.video.create({
               data: {
                 sectionId: section.id,
-                title: vid.title,
-                duration: vid.duration || 0,
+                title: vidTitle,
+                duration: vidDuration,
                 isWatched: false,
               },
             });
@@ -137,6 +169,10 @@ export async function POST(req: Request) {
         },
       },
     });
+
+    revalidatePath("/");
+    revalidatePath("/courses");
+    revalidatePath("/analytics");
 
     return NextResponse.json(fullCourse, { status: 201 });
   } catch (error) {

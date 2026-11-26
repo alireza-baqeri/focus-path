@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import prisma from "@/lib/prisma";
+import { parseUTCDate } from "@/lib/date-utils";
 
 export async function POST(req: Request) {
   try {
@@ -12,16 +14,21 @@ export async function POST(req: Request) {
 
     const userId = session.user.id;
     const body = await req.json();
-    const { durationMinutes, categoryName, date } = body;
+    const durationMinutes =
+      typeof body?.durationMinutes === "number"
+        ? Math.round(body.durationMinutes)
+        : Number.parseInt(String(body?.durationMinutes ?? ""), 10);
+    const categoryName = typeof body?.categoryName === "string" ? body.categoryName.trim() : "";
+    const dateRaw = typeof body?.date === "string" ? body.date : "";
 
-    if (!durationMinutes || !categoryName || !date) {
-      return NextResponse.json({ message: "Missing required fields" }, { status: 400 });
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0 || durationMinutes > 1440 || !categoryName || !dateRaw) {
+      return NextResponse.json({ message: "Missing or invalid required fields" }, { status: 400 });
     }
 
-    // Parse date cleanly to UTC midnight
-    const cleanDateStr = String(date).includes("T") ? String(date).split("T")[0] : String(date);
-    const [y, m, d] = cleanDateStr.split("-").map(Number);
-    const recordDate = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
+    const recordDate = parseUTCDate(dateRaw);
+    if (!recordDate) {
+      return NextResponse.json({ message: "Invalid date format" }, { status: 400 });
+    }
 
     // Ensure category exists
     let category = await prisma.activityCategory.findFirst({
@@ -59,9 +66,13 @@ export async function POST(req: Request) {
       data: {
         dayRecordId: dayRecord.id,
         categoryId: category.id,
-        durationMinutes: durationMinutes,
+        durationMinutes,
       }
     });
+
+    revalidatePath("/");
+    revalidatePath("/timetable");
+    revalidatePath("/analytics");
 
     return NextResponse.json({ success: true });
   } catch (error) {

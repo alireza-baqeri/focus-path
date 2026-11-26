@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { Play, Pause, RotateCcw, X } from "lucide-react";
-import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useEffect, useState, useRef, useCallback } from "react";
+import { Play, Pause, RotateCcw } from "lucide-react";
+
+function getCurrentTimestampMs(): number {
+  return Date.now();
+}
 
 export default function PomodoroTimer({ onComplete }: { onComplete?: (durationSeconds: number) => void }) {
   const [hours, setHours] = useState(0);
@@ -14,6 +17,21 @@ export default function PomodoroTimer({ onComplete }: { onComplete?: (durationSe
   
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const endTimeRef = useRef<number | null>(null);
+  const totalSecondsRef = useRef(totalSeconds);
+  const remainingSecondsRef = useRef(remainingSeconds);
+  const onCompleteRef = useRef(onComplete);
+
+  useEffect(() => {
+    totalSecondsRef.current = totalSeconds;
+  }, [totalSeconds]);
+
+  useEffect(() => {
+    remainingSecondsRef.current = remainingSeconds;
+  }, [remainingSeconds]);
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
   // Constants
   const CIRCUMFERENCE = 2 * Math.PI * 132;
@@ -37,7 +55,7 @@ export default function PomodoroTimer({ onComplete }: { onComplete?: (durationSe
     return Math.max(0, 210 - (percent / 100) * 210);
   };
 
-  const playCompletionSound = () => {
+  const playCompletionSound = useCallback(() => {
     try {
       // @ts-expect-error webkitAudioContext is not strictly typed on Window
       const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -56,24 +74,12 @@ export default function PomodoroTimer({ onComplete }: { onComplete?: (durationSe
         osc.start(audioCtx.currentTime + i * 0.15);
         osc.stop(audioCtx.currentTime + i * 0.15 + 0.4);
       });
-    } catch (e) {
+    } catch {
       console.warn("Audio not supported");
     }
-  };
+  }, []);
 
-  // Timer Tick
-  const tick = () => {
-    if (!endTimeRef.current) return;
-    const now = Date.now();
-    const newRemaining = Math.max(0, (endTimeRef.current - now) / 1000);
-    setRemainingSeconds(newRemaining);
-
-    if (newRemaining <= 0.05) {
-      completeTimer();
-    }
-  };
-
-  const completeTimer = () => {
+  const completeTimer = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     intervalRef.current = null;
     endTimeRef.current = null;
@@ -85,28 +91,50 @@ export default function PomodoroTimer({ onComplete }: { onComplete?: (durationSe
     }
     playCompletionSound();
     
-    if (onComplete) {
-      onComplete(totalSeconds);
+    if (onCompleteRef.current) {
+      onCompleteRef.current(totalSecondsRef.current);
     }
     
     setTimeout(() => {
       setState(prev => prev === 'completed' ? 'idle' : prev);
     }, 3000);
+  }, [playCompletionSound]);
+
+  // Timer Tick
+  const tick = useCallback(() => {
+    if (!endTimeRef.current) return;
+    const now = getCurrentTimestampMs();
+    const newRemaining = Math.max(0, (endTimeRef.current - now) / 1000);
+    setRemainingSeconds(newRemaining);
+
+    if (newRemaining <= 0.05) {
+      completeTimer();
+    }
+  }, [completeTimer]);
+
+  const handleDurationChange = (nextHours: number, nextMinutes: number) => {
+    setHours(nextHours);
+    setMinutes(nextMinutes);
+    if (state === 'idle') {
+      const total = nextHours * 3600 + nextMinutes * 60;
+      setTotalSeconds(total);
+      setRemainingSeconds(total);
+    }
   };
 
   // Actions
-  const handleStartPause = () => {
+  const handleStartPause = useCallback(() => {
     if (state === 'idle') {
       const total = hours * 3600 + minutes * 60;
       if (total <= 0) return;
       setTotalSeconds(total);
       setRemainingSeconds(total);
-      endTimeRef.current = Date.now() + total * 1000;
+      endTimeRef.current = getCurrentTimestampMs() + total * 1000;
       setState('running');
       if (intervalRef.current) clearInterval(intervalRef.current);
       intervalRef.current = setInterval(tick, 80);
     } else if (state === 'running') {
-      const now = Date.now();
+      const now = getCurrentTimestampMs();
       if (endTimeRef.current) {
         setRemainingSeconds(Math.max(0, (endTimeRef.current - now) / 1000));
       }
@@ -115,16 +143,22 @@ export default function PomodoroTimer({ onComplete }: { onComplete?: (durationSe
       intervalRef.current = null;
       endTimeRef.current = null;
     } else if (state === 'paused') {
-      endTimeRef.current = Date.now() + remainingSeconds * 1000;
+      endTimeRef.current = getCurrentTimestampMs() + remainingSecondsRef.current * 1000;
       setState('running');
       if (intervalRef.current) clearInterval(intervalRef.current);
       intervalRef.current = setInterval(tick, 80);
     } else if (state === 'completed') {
-      handleReset();
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = null;
+      endTimeRef.current = null;
+      setState('idle');
+      const total = hours * 3600 + minutes * 60;
+      setTotalSeconds(total);
+      setRemainingSeconds(total);
     }
-  };
+  }, [state, hours, minutes, tick]);
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     intervalRef.current = null;
     endTimeRef.current = null;
@@ -132,22 +166,13 @@ export default function PomodoroTimer({ onComplete }: { onComplete?: (durationSe
     const total = hours * 3600 + minutes * 60;
     setTotalSeconds(total);
     setRemainingSeconds(total);
-  };
-
-  // Sync inputs with remaining seconds when idle
-  useEffect(() => {
-    if (state === 'idle') {
-      const total = hours * 3600 + minutes * 60;
-      setTotalSeconds(total);
-      setRemainingSeconds(total);
-    }
-  }, [hours, minutes, state]);
+  }, [hours, minutes]);
 
   // Page visibility to prevent drift
   useEffect(() => {
     const handleVisibility = () => {
       if (!document.hidden && state === 'running' && endTimeRef.current) {
-        const now = Date.now();
+        const now = getCurrentTimestampMs();
         const newRemaining = Math.max(0, (endTimeRef.current - now) / 1000);
         if (newRemaining <= 0.05) {
           completeTimer();
@@ -158,7 +183,7 @@ export default function PomodoroTimer({ onComplete }: { onComplete?: (durationSe
     };
     document.addEventListener("visibilitychange", handleVisibility);
     return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, [state]);
+  }, [state, completeTimer]);
 
   // Keyboard
   useEffect(() => {
@@ -175,7 +200,7 @@ export default function PomodoroTimer({ onComplete }: { onComplete?: (durationSe
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [state, hours, minutes, remainingSeconds]);
+  }, [handleStartPause, handleReset]);
 
   // Cleanup
   useEffect(() => {
@@ -237,7 +262,7 @@ export default function PomodoroTimer({ onComplete }: { onComplete?: (durationSe
             type="number" 
             min="0" max="99" 
             value={hours} 
-            onChange={(e) => setHours(Math.max(0, Math.min(99, parseInt(e.target.value) || 0)))}
+            onChange={(e) => handleDurationChange(Math.max(0, Math.min(99, parseInt(e.target.value) || 0)), minutes)}
             disabled={state === 'running' || state === 'paused'}
             className="w-full bg-gray-800 border-2 border-gray-700 focus:border-indigo-500 rounded-xl px-4 py-3 text-center text-lg font-bold outline-none disabled:opacity-50 transition-colors"
           />
@@ -248,7 +273,7 @@ export default function PomodoroTimer({ onComplete }: { onComplete?: (durationSe
             type="number" 
             min="0" max="59" 
             value={minutes} 
-            onChange={(e) => setMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+            onChange={(e) => handleDurationChange(hours, Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
             disabled={state === 'running' || state === 'paused'}
             className="w-full bg-gray-800 border-2 border-gray-700 focus:border-indigo-500 rounded-xl px-4 py-3 text-center text-lg font-bold outline-none disabled:opacity-50 transition-colors"
           />

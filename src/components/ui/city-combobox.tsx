@@ -5,7 +5,6 @@ import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import { useDebounce } from "use-debounce";
 
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import {
   Command,
   CommandEmpty,
@@ -20,38 +19,58 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
+interface CityOption {
+  name: string;
+  country: string;
+  id: number;
+}
+
 export function CityCombobox({ value, onChange }: { value: string; onChange: (val: string) => void }) {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [debouncedSearch] = useDebounce(search, 500);
-  const [options, setOptions] = React.useState<{ name: string; country: string; id: number }[]>([]);
+  const [options, setOptions] = React.useState<CityOption[]>([]);
   const [loading, setLoading] = React.useState(false);
 
   React.useEffect(() => {
-    if (!debouncedSearch) {
-      setOptions([]);
+    if (!debouncedSearch.trim()) {
       return;
     }
+
+    const controller = new AbortController();
 
     async function fetchCities() {
       setLoading(true);
       try {
-        const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${debouncedSearch}&count=5&language=en&format=json`);
-        const data = await res.json();
+        const res = await fetch(
+          `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(debouncedSearch)}&count=5&language=en&format=json`,
+          { signal: controller.signal }
+        );
+        const data: { results?: CityOption[] } = await res.json();
         if (data.results) {
-          setOptions(data.results.map((r: any) => ({ name: r.name, country: r.country, id: r.id })));
+          setOptions(data.results.map((r) => ({ name: r.name, country: r.country, id: r.id })));
         } else {
           setOptions([]);
         }
       } catch (err) {
-        setOptions([]);
+        if ((err as Error).name !== "AbortError") {
+          setOptions([]);
+        }
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       }
     }
-    
+
     fetchCities();
+
+    return () => {
+      controller.abort();
+    };
   }, [debouncedSearch]);
+
+  const visibleOptions = debouncedSearch.trim() ? options : [];
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -68,10 +87,10 @@ export function CityCombobox({ value, onChange }: { value: string; onChange: (va
           />
           <CommandList>
             {loading && <div className="p-4 flex justify-center"><Loader2 className="w-4 h-4 animate-spin" /></div>}
-            {!loading && <CommandEmpty>No city found. Start typing...</CommandEmpty>}
-            {!loading && options.length > 0 && (
+            {!loading && visibleOptions.length === 0 && <CommandEmpty>No city found. Start typing...</CommandEmpty>}
+            {!loading && visibleOptions.length > 0 && (
               <CommandGroup>
-                {options.map((city) => (
+                {visibleOptions.map((city) => (
                   <CommandItem
                     key={city.id}
                     value={`${city.name} ${city.country}`}

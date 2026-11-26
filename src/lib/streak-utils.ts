@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { formatLocalDate } from "@/lib/date-utils";
+import { formatLocalDate, formatUTCDate } from "@/lib/date-utils";
 
 export async function calculateUserStreak(userId: string): Promise<number> {
   try {
@@ -34,26 +34,25 @@ export async function calculateUserStreak(userId: string): Promise<number> {
       },
     });
 
-    // Extract all unique dates formatted as YYYY-MM-DD local
     const activeDateStrings = new Set<string>();
-    
+
+    // DayRecord.date is stored at UTC midnight for its calendar date
     activeDayRecords.forEach((record) => {
       if (record.date) {
-        // Date in DB is stored at UTC midnight, which corresponds to local midnight.
-        // We can just format it using our local date formatter.
-        activeDateStrings.add(formatLocalDate(record.date));
+        const dateStr = formatUTCDate(record.date);
+        if (dateStr) activeDateStrings.add(dateStr);
       }
     });
 
+    // Video.watchedAtDate is stored as a timestamp
     watchedVideos.forEach((video) => {
       if (video.watchedAtDate) {
-        activeDateStrings.add(formatLocalDate(video.watchedAtDate));
+        const dateStr = formatLocalDate(video.watchedAtDate);
+        if (dateStr) activeDateStrings.add(dateStr);
       }
     });
 
-    const sortedDates = Array.from(activeDateStrings).sort((a, b) => (a < b ? 1 : -1)); // Descending
-
-    if (sortedDates.length === 0) return 0;
+    if (activeDateStrings.size === 0) return 0;
 
     // Calculate streak from today or yesterday
     const today = new Date();
@@ -63,32 +62,23 @@ export async function calculateUserStreak(userId: string): Promise<number> {
     const todayStr = formatLocalDate(today);
     const yesterdayStr = formatLocalDate(yesterday);
 
-    let streak = 0;
-    const currentDateStr = sortedDates.includes(todayStr) ? todayStr : (sortedDates.includes(yesterdayStr) ? yesterdayStr : null);
+    const startDateStr = activeDateStrings.has(todayStr)
+      ? todayStr
+      : activeDateStrings.has(yesterdayStr)
+      ? yesterdayStr
+      : null;
 
-    if (!currentDateStr) {
+    if (!startDateStr) {
       return 0; // No activity today or yesterday, streak broken
     }
 
-    // Now count backward from currentDateStr
-    let currentCheckDate = new Date(currentDateStr); // This will parse YYYY-MM-DD locally if we provide it carefully, but it's safer to build
-    // Actually, new Date("YYYY-MM-DD") creates UTC midnight, let's just do manual string manipulation or date object math.
-    const [y, m, d] = currentDateStr.split("-").map(Number);
-    currentCheckDate = new Date(y, m - 1, d, 12, 0, 0); // Noon local time to avoid timezone edge cases
+    let streak = 0;
+    const [y, m, d] = startDateStr.split("-").map(Number);
+    const currentCheckDate = new Date(y, m - 1, d, 12, 0, 0); // Noon local time to avoid DST shifts
 
-    let dateIndex = sortedDates.indexOf(currentDateStr);
-
-    while (dateIndex !== -1 && dateIndex < sortedDates.length) {
-      const expectedStr = formatLocalDate(currentCheckDate);
-      
-      if (sortedDates.includes(expectedStr)) {
-        streak++;
-        // Move back one day
-        currentCheckDate.setDate(currentCheckDate.getDate() - 1);
-        dateIndex = sortedDates.indexOf(expectedStr); // just to continue the loop logically
-      } else {
-        break; // Streak broken
-      }
+    while (activeDateStrings.has(formatLocalDate(currentCheckDate))) {
+      streak++;
+      currentCheckDate.setDate(currentCheckDate.getDate() - 1);
     }
 
     return streak;

@@ -42,7 +42,7 @@ export default function ActivityChart({ dates, recordsMap, categories }: Activit
       const label = d.toLocaleDateString("en-US", { month: "numeric", day: "numeric" });
       const record = recordsMap.get(dateStr);
 
-      const entry: any = {
+      const entry: Record<string, string | number> = {
         date: label,
         fullDate: dateStr,
         totalHours: 0,
@@ -57,12 +57,13 @@ export default function ActivityChart({ dates, recordsMap, categories }: Activit
         record.activityLogs.forEach((log) => {
           const cat = categories.find((c) => c.id === log.category.id) || log.category;
           const hours = parseFloat((log.durationMinutes / 60).toFixed(1));
-          entry[cat.name] = (entry[cat.name] || 0) + hours;
-          entry.totalHours += hours;
+          const prevHours = Number(entry[cat.name] || 0);
+          entry[cat.name] = prevHours + hours;
+          entry.totalHours = Number(entry.totalHours) + hours;
         });
       }
 
-      entry.totalHours = parseFloat(entry.totalHours.toFixed(1));
+      entry.totalHours = parseFloat(Number(entry.totalHours).toFixed(1));
       return entry;
     });
   }, [dates, recordsMap, categories]);

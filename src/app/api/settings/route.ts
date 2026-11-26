@@ -10,8 +10,18 @@ export async function GET() {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    include: { settings: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      image: true,
+      settings: true,
+    },
   });
+
+  if (!user) {
+    return NextResponse.json({ message: "User not found" }, { status: 404 });
+  }
 
   return NextResponse.json(user);
 }
@@ -22,9 +32,11 @@ export async function PUT(req: Request) {
     if (!session?.user?.id) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
-    const { name, weatherCity, newsCountry, quoteCategory } = body;
+    const name = typeof body?.name === "string" ? body.name.trim() : undefined;
+    const weatherCity = typeof body?.weatherCity === "string" ? body.weatherCity.trim() : undefined;
+    const newsCountry = typeof body?.newsCountry === "string" ? body.newsCountry.trim().toLowerCase() : undefined;
+    const quoteCategory = typeof body?.quoteCategory === "string" ? body.quoteCategory.trim() : undefined;
 
-    // Update User
     if (name) {
       await prisma.user.update({
         where: { id: session.user.id },
@@ -32,11 +44,19 @@ export async function PUT(req: Request) {
       });
     }
 
-    // Update Settings
     await prisma.settings.upsert({
       where: { userId: session.user.id },
-      update: { weatherCity, newsCountry, quoteCategory },
-      create: { userId: session.user.id, weatherCity, newsCountry, quoteCategory },
+      update: {
+        ...(weatherCity ? { weatherCity } : {}),
+        ...(newsCountry ? { newsCountry } : {}),
+        ...(quoteCategory ? { quoteCategory } : {}),
+      },
+      create: {
+        userId: session.user.id,
+        weatherCity: weatherCity || "Tehran",
+        newsCountry: newsCountry || "us",
+        quoteCategory: quoteCategory || "motivational",
+      },
     });
 
     revalidatePath("/");

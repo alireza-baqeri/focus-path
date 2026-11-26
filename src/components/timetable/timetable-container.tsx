@@ -7,7 +7,6 @@ import {
   ChevronRight,
   Target,
   ArrowLeft,
-  Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 import WeekView from "./week-view";
@@ -17,9 +16,59 @@ import ActivityChart from "./activity-chart";
 import DailyJournalModal from "./daily-journal-modal";
 import GoalManagerModal from "./goal-manager-modal";
 import { Button } from "@/components/ui/button";
-import { formatLocalDate } from "@/lib/date-utils";
+import { formatLocalDate, formatUTCDate } from "@/lib/date-utils";
+import { toast } from "sonner";
 
 export type ViewType = "7days" | "28days" | "3months" | "6months" | "9months" | "1year";
+
+interface CategoryItem {
+  id: string;
+  name: string;
+  emoji: string;
+  colorCode: string;
+}
+
+interface GoalItem {
+  id: string;
+  title: string;
+  targetDescription?: string | null;
+  startDate: string;
+  endDate: string;
+  isActive: boolean;
+}
+
+interface DayRecordItem {
+  id: string;
+  date: string;
+  wakeTime?: string | null;
+  sleepTime?: string | null;
+  journalEntries?: { id: string; content: string; orderIndex: number }[];
+  activityLogs?: {
+    id: string;
+    categoryId: string;
+    durationMinutes: number;
+    category: CategoryItem;
+  }[];
+  goalProgresses?: {
+    id: string;
+    goalId: string;
+    description: string;
+    goal: { title: string };
+  }[];
+}
+
+interface UserSettingsItem {
+  quoteCategory?: string | null;
+}
+
+interface SaveDayRecordPayload {
+  date: string;
+  wakeTime: string;
+  sleepTime: string;
+  journalEntries: { content: string; orderIndex: number }[];
+  activityLogs: { categoryId: string; durationMinutes: number }[];
+  goalProgresses: { goalId: string; description: string }[];
+}
 
 export default function TimetableContainer() {
   const [activeView, setActiveView] = useState<ViewType>("28days");
@@ -32,45 +81,45 @@ export default function TimetableContainer() {
     return monday;
   });
 
-  const [categories, setCategories] = useState<any[]>([]);
-  const [goals, setGoals] = useState<any[]>([]);
-  const [dayRecords, setDayRecords] = useState<any[]>([]);
-  const [userSettings, setUserSettings] = useState<any>(null);
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [goals, setGoals] = useState<GoalItem[]>([]);
+  const [dayRecords, setDayRecords] = useState<DayRecordItem[]>([]);
+  const [userSettings, setUserSettings] = useState<UserSettingsItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Modals state
   const [selectedDateStr, setSelectedDateStr] = useState<string | null>(null);
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
 
-  // Fetch timetable data
-  const fetchData = async () => {
-    try {
-      setIsLoading(true);
-      const res = await fetch("/api/timetable");
-      if (res.ok) {
-        const data = await res.json();
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/timetable")
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("Failed to load"))))
+      .then((data) => {
+        if (cancelled) return;
         setCategories(data.categories || []);
         setGoals(data.goals || []);
         setDayRecords(data.dayRecords || []);
-        setUserSettings(data.settings);
-      }
-    } catch (error) {
-      console.error("Failed to load timetable data", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+        setUserSettings(data.settings || null);
+      })
+      .catch((error) => {
+        if (!cancelled) console.error("Failed to load timetable data", error);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
 
-  useEffect(() => {
-    fetchData();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Records Map for O(1) lookups: DateStr -> DayRecord
+  // Records Map for O(1) lookups: DateStr -> DayRecord (DayRecord.date is UTC midnight)
   const recordsMap = useMemo(() => {
-    const map = new Map<string, any>();
+    const map = new Map<string, DayRecordItem>();
     dayRecords.forEach((r) => {
-      const dateStr = formatLocalDate(r.date);
-      map.set(dateStr, r);
+      const dateStr = formatUTCDate(r.date);
+      if (dateStr) map.set(dateStr, r);
     });
     return map;
   }, [dayRecords]);
@@ -121,40 +170,49 @@ export default function TimetableContainer() {
   };
 
   // Save Day Record (Journal, Activity, Goal)
-  const handleSaveDayRecord = async (payload: any) => {
+  const handleSaveDayRecord = async (payload: SaveDayRecordPayload) => {
     const res = await fetch("/api/timetable", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
 
-    if (res.ok) {
-      const updated = await res.json();
-      // Update local state immediately
-      setDayRecords((prev) => {
-        const dateStr = formatLocalDate(updated.date);
-        const existingIdx = prev.findIndex(
-          (r) => formatLocalDate(r.date) === dateStr
-        );
-        if (existingIdx >= 0) {
-          const next = [...prev];
-          next[existingIdx] = updated;
-          return next;
-        }
-        return [...prev, updated];
-      });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.message || "Failed to save day record.");
+      throw new Error(err.message || "Failed to save day record");
     }
+
+    const updated: DayRecordItem = await res.json();
+    // Update local state immediately
+    setDayRecords((prev) => {
+      const dateStr = formatUTCDate(updated.date);
+      const existingIdx = prev.findIndex(
+        (r) => formatUTCDate(r.date) === dateStr
+      );
+      if (existingIdx >= 0) {
+        const next = [...prev];
+        next[existingIdx] = updated;
+        return next;
+      }
+      return [...prev, updated];
+    });
   };
 
   // Goal & Category Handlers
-  const handleAddGoal = async (goalData: any) => {
+  const handleAddGoal = async (goalData: {
+    title: string;
+    targetDescription?: string;
+    startDate: string;
+    endDate: string;
+  }) => {
     const res = await fetch("/api/goals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(goalData),
     });
     if (res.ok) {
-      const newGoal = await res.json();
+      const newGoal: GoalItem = await res.json();
       setGoals((prev) => [newGoal, ...prev]);
     } else {
       const err = await res.json();
@@ -166,18 +224,26 @@ export default function TimetableContainer() {
     const res = await fetch(`/api/goals?id=${id}`, { method: "DELETE" });
     if (res.ok) {
       setGoals((prev) => prev.filter((g) => g.id !== id));
+    } else {
+      toast.error("Failed to delete goal.");
     }
   };
 
-  const handleAddCategory = async (catData: any) => {
+  const handleAddCategory = async (catData: {
+    name: string;
+    emoji: string;
+    colorCode: string;
+  }) => {
     const res = await fetch("/api/categories", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(catData),
     });
     if (res.ok) {
-      const newCat = await res.json();
+      const newCat: CategoryItem = await res.json();
       setCategories((prev) => [...prev, newCat]);
+    } else {
+      toast.error("Failed to create category.");
     }
   };
 
@@ -185,6 +251,8 @@ export default function TimetableContainer() {
     const res = await fetch(`/api/categories?id=${id}`, { method: "DELETE" });
     if (res.ok) {
       setCategories((prev) => prev.filter((c) => c.id !== id));
+    } else {
+      toast.error("Failed to delete category.");
     }
   };
 
@@ -341,6 +409,7 @@ export default function TimetableContainer() {
       {/* Daily Journal & Planner Modal */}
       {selectedDateStr && (
         <DailyJournalModal
+          key={selectedDateStr}
           isOpen={true}
           onClose={() => setSelectedDateStr(null)}
           dateStr={selectedDateStr}

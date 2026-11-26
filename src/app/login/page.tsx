@@ -68,7 +68,7 @@ export default function LoginPage() {
           setError(data.message || "Registration failed");
           setIsLoading(false);
         }
-      } catch (err) {
+      } catch {
         setError("Network error");
         setIsLoading(false);
       }

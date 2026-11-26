@@ -1,42 +1,27 @@
 "use client";
 
-import { useState, useEffect } from "react";
-
 interface TimeDropdownProps {
   label: string;
   value: string; // e.g. "07:30 AM"
   onChange: (val: string) => void;
 }
 
-export default function TimeDropdown({ label, value, onChange }: TimeDropdownProps) {
-  const parseTime = (str: string) => {
-    if (!str) return { hour: "07", minute: "00", period: "AM" };
-    const parts = str.split(" ");
-    const period = parts[1] || "AM";
-    const timeParts = (parts[0] || "07:00").split(":");
-    return {
-      hour: timeParts[0] || "07",
-      minute: timeParts[1] || "00",
-      period,
-    };
+function parseTime(str: string) {
+  if (!str) return { hour: "07", minute: "00", period: "AM" };
+  const parts = str.split(" ");
+  const period = parts[1] || "AM";
+  const timeParts = (parts[0] || "07:00").split(":");
+  return {
+    hour: timeParts[0] || "07",
+    minute: timeParts[1] || "00",
+    period,
   };
+}
 
-  const parsed = parseTime(value);
-  const [hour, setHour] = useState(parsed.hour);
-  const [minute, setMinute] = useState(parsed.minute);
-  const [period, setPeriod] = useState(parsed.period);
-
-  useEffect(() => {
-    const p = parseTime(value);
-    setHour(p.hour);
-    setMinute(p.minute);
-    setPeriod(p.period);
-  }, [value]);
+export default function TimeDropdown({ label, value, onChange }: TimeDropdownProps) {
+  const { hour, minute, period } = parseTime(value);
 
   const update = (h: string, m: string, p: string) => {
-    setHour(h);
-    setMinute(m);
-    setPeriod(p);
     onChange(`${h}:${m} ${p}`);
   };
 

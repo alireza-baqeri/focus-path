@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Plus, Trash2, CheckCircle2, Quote, Sparkles, Target, Activity } from "lucide-react";
+import { X, Plus, Trash2, CheckCircle2, Quote, Target, Activity } from "lucide-react";
 import TimeDropdown from "./time-dropdown";
 import { Button } from "@/components/ui/button";
 
@@ -18,14 +18,31 @@ interface Goal {
   targetDescription?: string | null;
 }
 
+interface DayRecordInput {
+  wakeTime?: string | null;
+  sleepTime?: string | null;
+  journalEntries?: { content: string }[];
+  activityLogs?: { categoryId: string; durationMinutes: number }[];
+  goalProgresses?: { goalId: string; description: string }[];
+}
+
+interface DailyJournalSavePayload {
+  date: string;
+  wakeTime: string;
+  sleepTime: string;
+  journalEntries: { content: string; orderIndex: number }[];
+  activityLogs: { categoryId: string; durationMinutes: number }[];
+  goalProgresses: { goalId: string; description: string }[];
+}
+
 interface DailyJournalModalProps {
   isOpen: boolean;
   onClose: () => void;
   dateStr: string; // YYYY-MM-DD
-  dayRecord?: any;
+  dayRecord?: DayRecordInput | null;
   categories: ActivityCategory[];
   goals: Goal[];
-  onSave: (data: any) => Promise<void>;
+  onSave: (data: DailyJournalSavePayload) => Promise<void>;
   quoteCategory?: string;
 }
 
@@ -39,58 +56,36 @@ export default function DailyJournalModal({
   onSave,
   quoteCategory = "inspire",
 }: DailyJournalModalProps) {
-  const [wakeTime, setWakeTime] = useState("07:00 AM");
-  const [sleepTime, setSleepTime] = useState("11:30 PM");
-  const [journalItems, setJournalItems] = useState<string[]>([""]);
-  const [activities, setActivities] = useState<{ categoryId: string; durationMinutes: number }[]>([]);
-  const [goalInputs, setGoalInputs] = useState<Record<string, string>>({});
+  const [wakeTime, setWakeTime] = useState(() => dayRecord?.wakeTime || "07:00 AM");
+  const [sleepTime, setSleepTime] = useState(() => dayRecord?.sleepTime || "11:30 PM");
+  const [journalItems, setJournalItems] = useState<string[]>(() =>
+    dayRecord?.journalEntries && dayRecord.journalEntries.length > 0
+      ? dayRecord.journalEntries.map((e) => e.content)
+      : [""]
+  );
+  const [activities, setActivities] = useState<{ categoryId: string; durationMinutes: number }[]>(
+    () =>
+      dayRecord?.activityLogs && dayRecord.activityLogs.length > 0
+        ? dayRecord.activityLogs.map((l) => ({
+            categoryId: l.categoryId,
+            durationMinutes: l.durationMinutes,
+          }))
+        : []
+  );
+  const [goalInputs, setGoalInputs] = useState<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    dayRecord?.goalProgresses?.forEach((gp) => {
+      map[gp.goalId] = gp.description;
+    });
+    return map;
+  });
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [quote, setQuote] = useState<{ text: string; author: string } | null>(null);
 
-  // Initialize state when dayRecord changes
-  useEffect(() => {
-    if (dayRecord) {
-      setWakeTime(dayRecord.wakeTime || "07:00 AM");
-      setSleepTime(dayRecord.sleepTime || "11:30 PM");
-
-      if (dayRecord.journalEntries && dayRecord.journalEntries.length > 0) {
-        setJournalItems(dayRecord.journalEntries.map((e: any) => e.content));
-      } else {
-        setJournalItems([""]);
-      }
-
-      if (dayRecord.activityLogs && dayRecord.activityLogs.length > 0) {
-        setActivities(
-          dayRecord.activityLogs.map((l: any) => ({
-            categoryId: l.categoryId,
-            durationMinutes: l.durationMinutes,
-          }))
-        );
-      } else {
-        setActivities([]);
-      }
-
-      if (dayRecord.goalProgresses) {
-        const map: Record<string, string> = {};
-        dayRecord.goalProgresses.forEach((gp: any) => {
-          map[gp.goalId] = gp.description;
-        });
-        setGoalInputs(map);
-      } else {
-        setGoalInputs({});
-      }
-    } else {
-      setWakeTime("07:00 AM");
-      setSleepTime("11:30 PM");
-      setJournalItems([""]);
-      setActivities([]);
-      setGoalInputs({});
-    }
-  }, [dayRecord, dateStr]);
-
   // Fetch inspirational quote
   useEffect(() => {
+    let cancelled = false;
     async function loadQuote() {
       try {
         const res = await fetch(
@@ -98,7 +93,7 @@ export default function DailyJournalModal({
         );
         if (res.ok) {
           const data = await res.json();
-          if (data?.quoteText) {
+          if (!cancelled && data?.quoteText) {
             setQuote({
               text: data.quoteText,
               author: data.quoteAuthor,
@@ -106,18 +101,25 @@ export default function DailyJournalModal({
             return;
           }
         }
-      } catch (e) {}
+      } catch {
+        // Use fallback quote below
+      }
 
-      // Fallback
-      setQuote({
-        text: "Small daily improvements over time lead to stunning results.",
-        author: "Robin Sharma",
-      });
+      if (!cancelled) {
+        setQuote({
+          text: "Small daily improvements over time lead to stunning results.",
+          author: "Robin Sharma",
+        });
+      }
     }
 
     if (isOpen) {
       loadQuote();
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, quoteCategory]);
 
   if (!isOpen) return null;
@@ -161,7 +163,7 @@ export default function DailyJournalModal({
     setSavedSuccess(false);
 
     const goalProgressList = Object.entries(goalInputs)
-      .filter(([_, desc]) => desc.trim().length > 0)
+      .filter(([, desc]) => desc.trim().length > 0)
       .map(([goalId, description]) => ({ goalId, description }));
 
     const payload = {
@@ -223,7 +225,7 @@ export default function DailyJournalModal({
               <div className="flex items-start gap-2.5">
                 <Quote className="w-4 h-4 text-purple-500 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="italic text-gray-700 dark:text-gray-300">"{quote.text}"</p>
+                  <p className="italic text-gray-700 dark:text-gray-300">&ldquo;{quote.text}&rdquo;</p>
                   <p className="text-right text-[11px] font-semibold text-purple-600 dark:text-purple-400 mt-1">
                     — {quote.author}
                   </p>

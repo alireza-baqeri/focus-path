@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma"
 import bcrypt from "bcryptjs"
 
 export const authOptions: NextAuthOptions = {
+  secret: process.env.NEXTAUTH_SECRET,
   providers: [
     CredentialsProvider({
       name: "Credentials",
@@ -12,19 +13,23 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" }
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
+        const email = credentials?.email?.trim();
+        const password = credentials?.password;
+        if (!email || !password) {
           return null
         }
 
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email }
+          where: { email }
+        }) ?? await prisma.user.findUnique({
+          where: { email: email.toLowerCase() }
         })
 
         if (!user || !user.passwordHash) {
           return null
         }
 
-        const isPasswordValid = await bcrypt.compare(credentials.password, user.passwordHash)
+        const isPasswordValid = await bcrypt.compare(password, user.passwordHash)
 
         if (!isPasswordValid) {
           return null
@@ -45,12 +50,19 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (token && session.user) {
         session.user.id = token.sub as string;
+        if (typeof token.name === "string") {
+          session.user.name = token.name;
+        }
       }
       return session;
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.sub = user.id;
+        token.name = user.name;
+      }
+      if (trigger === "update" && typeof session?.name === "string") {
+        token.name = session.name;
       }
       return token;
     }

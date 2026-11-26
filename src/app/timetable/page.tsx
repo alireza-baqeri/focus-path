@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import TimetableContainer from "@/components/timetable/timetable-container";
 
 export const metadata = {
-  title: "Time Table & Journal | Process Tracker",
+  title: "Time Table & Journal",
   description: "Google Calendar style time table, sleep tracking, and daily activity journaling.",
 };
 

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { X, Target, Plus, Trash2, Tag, Calendar } from "lucide-react";
+import { X, Target, Plus, Trash2, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { formatLocalDate, getTodayLocalDateStr } from "@/lib/date-utils";
 
 interface Goal {
   id: string;
@@ -20,14 +21,27 @@ interface ActivityCategory {
   colorCode: string;
 }
 
+interface NewGoalInput {
+  title: string;
+  targetDescription?: string;
+  startDate: string;
+  endDate: string;
+}
+
+interface NewCategoryInput {
+  name: string;
+  emoji: string;
+  colorCode: string;
+}
+
 interface GoalManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
   goals: Goal[];
   categories: ActivityCategory[];
-  onAddGoal: (goal: any) => Promise<void>;
+  onAddGoal: (goal: NewGoalInput) => Promise<void>;
   onDeleteGoal: (id: string) => Promise<void>;
-  onAddCategory: (cat: any) => Promise<void>;
+  onAddCategory: (cat: NewCategoryInput) => Promise<void>;
   onDeleteCategory: (id: string) => Promise<void>;
 }
 
@@ -46,17 +60,19 @@ export default function GoalManagerModal({
   // Goal Form State
   const [goalTitle, setGoalTitle] = useState("");
   const [goalDesc, setGoalDesc] = useState("");
-  const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
-  const [endDate, setEndDate] = useState(
-    new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
-  );
+  const [startDate, setStartDate] = useState(() => getTodayLocalDateStr());
+  const [endDate, setEndDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return formatLocalDate(d);
+  });
   const [goalError, setGoalError] = useState("");
   const [isSubmittingGoal, setIsSubmittingGoal] = useState(false);
 
   // Category Form State
   const [catName, setCatName] = useState("");
   const [catEmoji, setCatEmoji] = useState("⚡");
-  const [catColor, setCatColor] = useState("#3b82f6");
+  const catColor = "#3b82f6";
   const [isSubmittingCat, setIsSubmittingCat] = useState(false);
 
   if (!isOpen) return null;
@@ -85,8 +101,8 @@ export default function GoalManagerModal({
       });
       setGoalTitle("");
       setGoalDesc("");
-    } catch (err: any) {
-      setGoalError(err.message || "Failed to create goal");
+    } catch (err) {
+      setGoalError(err instanceof Error ? err.message : "Failed to create goal");
     } finally {
       setIsSubmittingGoal(false);
     }

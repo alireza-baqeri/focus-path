@@ -1,12 +1,20 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Newspaper } from "lucide-react";
 
-const API_KEY = "c0db6e48a8724d4294e88d792f2f2b48";
+const API_KEY = process.env.NEWS_API_KEY;
 
 interface Article {
   title: string;
   url: string;
   source?: { name: string };
+}
+
+interface NewsApiResponse {
+  articles?: Array<{
+    title?: string | null;
+    url?: string | null;
+    source?: { name?: string | null } | null;
+  }>;
 }
 
 const fallbackArticles: Article[] = [
@@ -38,6 +46,10 @@ const fallbackArticles: Article[] = [
 ];
 
 async function getNews(countryCode: string): Promise<Article[]> {
+  if (!API_KEY) {
+    return fallbackArticles;
+  }
+
   const code = (countryCode || "us").toLowerCase().trim();
 
   // NewsAPI does not support 'ir' in top-headlines, so use 'everything?q=Iran'
@@ -57,9 +69,9 @@ async function getNews(countryCode: string): Promise<Article[]> {
     clearTimeout(timeout);
 
     if (res.ok) {
-      const data = await res.json();
+      const data: NewsApiResponse = await res.json();
       const articles = (data.articles || []).filter(
-        (a: any) => a.title && a.title !== "[Removed]" && a.url
+        (a): a is Article => Boolean(a.title && a.title !== "[Removed]" && a.url)
       );
       if (articles.length > 0) {
         return articles;
@@ -71,9 +83,9 @@ async function getNews(countryCode: string): Promise<Article[]> {
       const fallbackUrl = `https://newsapi.org/v2/top-headlines?country=us&pageSize=20&apiKey=${API_KEY}`;
       const resFallback = await fetch(fallbackUrl, { next: { revalidate: 3600 } });
       if (resFallback.ok) {
-        const data = await resFallback.json();
+        const data: NewsApiResponse = await resFallback.json();
         const articles = (data.articles || []).filter(
-          (a: any) => a.title && a.title !== "[Removed]" && a.url
+          (a): a is Article => Boolean(a.title && a.title !== "[Removed]" && a.url)
         );
         if (articles.length > 0) {
           return articles;

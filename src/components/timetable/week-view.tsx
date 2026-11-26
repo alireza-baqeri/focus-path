@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Plus, Clock, Moon, Sun, CheckCircle2, ChevronRight, Edit3 } from "lucide-react";
+import { Moon, Sun, Edit3 } from "lucide-react";
 import { formatLocalDate } from "@/lib/date-utils";
 
 interface DayRecordData {
@@ -42,7 +42,7 @@ export default function WeekView({ startDate, recordsMap, onSelectDay }: WeekVie
     };
   });
 
-  const handleCardClick = (index: number, dateStr: string) => {
+  const handleCardClick = (index: number) => {
     if (expandedIndex === index) {
       // Toggle off
       setExpandedIndex(null);
@@ -55,17 +55,13 @@ export default function WeekView({ startDate, recordsMap, onSelectDay }: WeekVie
     <div className="w-full h-[540px] flex gap-2.5 overflow-hidden p-2 rounded-2xl bg-gray-50/50 dark:bg-gray-950/40 border border-gray-200/80 dark:border-gray-800">
       {days.map((day, idx) => {
         const isExpanded = expandedIndex === idx;
-        const hasData =
-          day.record &&
-          ((day.record.journalEntries && day.record.journalEntries.length > 0) ||
-            (day.record.activityLogs && day.record.activityLogs.length > 0));
 
         return (
           <motion.div
             key={day.dateStr}
             layout
             transition={{ type: "spring", stiffness: 350, damping: 28 }}
-            onClick={() => handleCardClick(idx, day.dateStr)}
+            onClick={() => handleCardClick(idx)}
             className={`relative flex flex-col h-full rounded-xl cursor-pointer select-none transition-shadow overflow-hidden border ${
               isExpanded
                 ? "flex-[2.4] bg-white dark:bg-gray-900 border-blue-500/80 dark:border-blue-500 shadow-xl ring-2 ring-blue-500/20"

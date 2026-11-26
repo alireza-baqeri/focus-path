@@ -11,7 +11,7 @@
 
 import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Video, Clock, Code2, Layers, LayoutGrid, Flame } from "lucide-react";
+import { Video, Clock, Code2, Layers, LayoutGrid, Flame, type LucideIcon } from "lucide-react";
 import { formatLocalDate } from "@/lib/date-utils";
 
 export type MetricType = "allHours" | "codingHours" | "learningHours" | "videos";
@@ -134,7 +134,7 @@ export default function GitHubContributionBoard({ initialData }: GitHubContribut
 
   const metricConfig: Record<
     MetricType,
-    { title: string; icon: any; unit: string; description: string }
+    { title: string; icon: LucideIcon; unit: string; description: string }
   > = {
     allHours: {
       title: "Total Activity",

@@ -12,10 +12,24 @@ export async function POST(req: Request) {
 
     const userId = session.user.id;
     const body = await req.json();
-    const { title, targetDescription, startDate, endDate } = body;
+    const title = typeof body?.title === "string" ? body.title.trim() : "";
+    const targetDescription =
+      typeof body?.targetDescription === "string" ? body.targetDescription.trim() : null;
+    const startDateRaw = body?.startDate;
+    const endDateRaw = body?.endDate;
 
-    if (!title || !startDate || !endDate) {
+    if (!title || !startDateRaw || !endDateRaw) {
       return NextResponse.json({ message: "Missing required fields" }, { status: 400 });
+    }
+
+    const parsedStart = new Date(startDateRaw);
+    const parsedEnd = new Date(endDateRaw);
+    if (isNaN(parsedStart.getTime()) || isNaN(parsedEnd.getTime())) {
+      return NextResponse.json({ message: "Invalid start or end date" }, { status: 400 });
+    }
+
+    if (parsedEnd < parsedStart) {
+      return NextResponse.json({ message: "End date must be on or after start date" }, { status: 400 });
     }
 
     // Check count of active goals (max 3 allowed)
@@ -32,8 +46,8 @@ export async function POST(req: Request) {
         userId,
         title,
         targetDescription,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        startDate: parsedStart,
+        endDate: parsedEnd,
         isActive: true,
       },
     });
@@ -53,10 +67,23 @@ export async function DELETE(req: Request) {
     }
 
     const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
+    const id = searchParams.get("id")?.trim();
 
     if (!id) {
       return NextResponse.json({ message: "ID is required" }, { status: 400 });
+    }
+
+    const existingGoal = await prisma.goal.findUnique({
+      where: { id },
+      select: { userId: true },
+    });
+
+    if (!existingGoal) {
+      return NextResponse.json({ message: "Goal not found" }, { status: 404 });
+    }
+
+    if (existingGoal.userId !== session.user.id) {
+      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
     }
 
     await prisma.goal.delete({
@@ -65,6 +92,7 @@ export async function DELETE(req: Request) {
 
     return NextResponse.json({ message: "Goal deleted" });
   } catch (error) {
+    console.error("Goal deletion error:", error);
     return NextResponse.json({ message: "Error deleting goal" }, { status: 500 });
   }
 }

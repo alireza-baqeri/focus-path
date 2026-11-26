@@ -1,6 +1,6 @@
 "use client";
 
-import { Sun, Moon, Edit3 } from "lucide-react";
+import { Sun, Edit3 } from "lucide-react";
 import { formatLocalDate } from "@/lib/date-utils";
 
 interface DayRecordData {
@@ -56,11 +56,6 @@ export default function MonthView({ startDate, recordsMap, onSelectDay }: MonthV
       {/* 28 Rectangles Grid (4 rows x 7 columns) */}
       <div className="grid grid-cols-7 divide-x divide-y divide-gray-200 dark:divide-gray-800 border-b border-gray-200 dark:border-gray-800">
         {days.map((day) => {
-          const hasRecord =
-            day.record &&
-            ((day.record.journalEntries && day.record.journalEntries.length > 0) ||
-              (day.record.activityLogs && day.record.activityLogs.length > 0));
-
           return (
             <div
               key={day.dateStr}

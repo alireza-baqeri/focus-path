@@ -14,7 +14,6 @@
  */
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./api/auth/[...nextauth]/route";
-import { redirect } from "next/navigation";
 import prisma from "@/lib/prisma";
 
 // Widgets
@@ -61,7 +60,7 @@ export default async function Home() {
               Welcome, {firstName}
             </h1>
             <p className="text-gray-500 dark:text-gray-400 mt-2">
-              Here's what's happening with your progress today.
+              Here&apos;s what&apos;s happening with your progress today.
             </p>
           </div>
           <div className="flex flex-col sm:flex-row items-end gap-3">
